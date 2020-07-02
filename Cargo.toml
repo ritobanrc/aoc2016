@@ -1,0 +1,14 @@
+[package]
+name = "aoc2016"
+version = "0.1.0"
+authors = ["Ritoban Roy-Chowdhury <ritobanrc@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0"
+paste = "0.1.16"
+itertools = "0.9"
+cgmath = "0.17"
+regex = "1.3"
