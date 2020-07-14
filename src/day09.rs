@@ -7,7 +7,7 @@ pub fn day09_main() -> Result<()> {
 
     assert_eq!(97714, part1_solution(&input));
 
-    assert_eq!(10762972461, part2_solution(&input.trim())); // ngl i don't know why you have to subtract 1
+    assert_eq!(10762972461, part2_solution(&input.trim()));
 
     Ok(())
 }
