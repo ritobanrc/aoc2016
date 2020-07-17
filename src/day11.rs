@@ -8,7 +8,7 @@ use std::fmt;
 aoc!(11);
 
 pub fn day11_main() -> Result<()> {
-    let input = {
+    let input1 = {
         use Elements as E;
         Map {
             floors: vec![
@@ -33,25 +33,58 @@ pub fn day11_main() -> Result<()> {
         }
     };
 
-    assert_eq!(true, input.check_safety());
+    assert_eq!(true, input1.check_safety());
+    assert_eq!(47, solutions(input1, Elements::P1_ALL));
 
-    assert_eq!(47, part1_solution(input, Elements::MAIN_ALL));
+    let input2 = {
+        use Elements as E;
+        Map {
+            floors: vec![
+                Floor {
+                    generators: E::Polonium
+                        | E::Thulium
+                        | E::Promethium
+                        | E::Ruthenium
+                        | E::Cobalt
+                        | E::Dilithium
+                        | E::Elerium,
+                    microchips: E::Thulium | E::Ruthenium | E::Cobalt | E::Dilithium | E::Elerium,
+                },
+                Floor {
+                    generators: E::empty(),
+                    microchips: E::Polonium | E::Promethium,
+                },
+                Floor {
+                    generators: E::empty(),
+                    microchips: E::empty(),
+                },
+                Floor {
+                    generators: E::empty(),
+                    microchips: E::empty(),
+                },
+            ],
+            elevator: 0,
+        }
+    };
+
+    assert_eq!(71, solutions(input2, Elements::P2_ALL));
 
     Ok(())
 }
 
 bitflags! {
     struct Elements: u8 {
-        const Hydrogen   = 0b0000_0001;
-        const Lithium    = 0b0000_0010;
+        const Dilithium   = 0b0000_0001;
+        const Elerium    = 0b0000_0010;
         const Polonium   = 0b0000_0100;
         const Thulium    = 0b0000_1000;
         const Promethium = 0b0001_0000;
         const Ruthenium  = 0b0010_0000;
         const Cobalt     = 0b0100_0000;
 
-        const MAIN_ALL = Elements::Polonium.bits | Elements::Thulium.bits | Elements::Promethium.bits | Elements::Ruthenium.bits | Elements::Cobalt.bits;
-        const EXAMPLE_ALL = Elements::Hydrogen.bits | Elements::Lithium.bits;
+        const P1_ALL = Elements::Polonium.bits | Elements::Thulium.bits | Elements::Promethium.bits | Elements::Ruthenium.bits | Elements::Cobalt.bits;
+        const P2_ALL = Elements::P1_ALL.bits | Elements::Dilithium.bits | Elements::Elerium.bits;
+        //const EXAMPLE_ALL = Elements::Hydrogen.bits | Elements::Lithium.bits;
     }
 }
 
@@ -149,7 +182,7 @@ enum Move {
     OneGenerator(Elements),
 }
 
-fn part1_solution(map: Map, all: Elements) -> usize {
+fn solutions(map: Map, all: Elements) -> usize {
     let mut queue = VecDeque::new();
     queue.push_back((0, map.clone()));
 
@@ -170,9 +203,6 @@ fn part1_solution(map: Map, all: Elements) -> usize {
             x if x == map.floors.len() - 1 => vec![map.elevator - 1],
             _ => vec![map.elevator + 1, map.elevator - 1],
         };
-
-        //map.display_map();
-        //println!("{:?}", map.all_possible_moves());
 
         for (possibility, dest) in iproduct!(map.all_possible_moves(), destinations) {
             let mut next_map = map.clone();
@@ -219,37 +249,6 @@ fn part1_solution(map: Map, all: Elements) -> usize {
                 visited.insert(next_map.clone());
             }
         }
-        //break;
     }
     0
-}
-
-#[test]
-fn day11_example() {
-    let input = {
-        use Elements as E;
-        Map {
-            floors: vec![
-                Floor {
-                    generators: E::empty(),
-                    microchips: E::Hydrogen | E::Lithium,
-                },
-                Floor {
-                    generators: E::Hydrogen,
-                    microchips: E::empty(),
-                },
-                Floor {
-                    generators: E::Lithium,
-                    microchips: E::empty(),
-                },
-                Floor {
-                    generators: E::empty(),
-                    microchips: E::empty(),
-                },
-            ],
-            elevator: 0,
-        }
-    };
-
-    assert_eq!(11, part1_solution(input, Elements::EXAMPLE_ALL));
 }
