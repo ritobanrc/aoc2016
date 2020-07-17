@@ -1,6 +1,7 @@
 use crate::aoc;
 use anyhow::Result;
-use itertools::Itertools;
+use bitflags::bitflags;
+use itertools::{iproduct, Itertools};
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
 
@@ -8,215 +9,247 @@ aoc!(11);
 
 pub fn day11_main() -> Result<()> {
     let input = {
-        use Element::*;
-        use Item::*;
-        vec![
-            vec![
-                Generator(Polonium),
-                Generator(Thulium),
-                Microchip(Thulium),
-                Generator(Promethium),
-                Generator(Ruthenium),
-                Microchip(Ruthenium),
-                Generator(Cobalt),
-                Microchip(Cobalt),
+        use Elements as E;
+        Map {
+            floors: vec![
+                Floor {
+                    generators: E::Polonium | E::Thulium | E::Promethium | E::Ruthenium | E::Cobalt,
+                    microchips: E::Thulium | E::Ruthenium | E::Cobalt,
+                },
+                Floor {
+                    generators: E::empty(),
+                    microchips: E::Polonium | E::Promethium,
+                },
+                Floor {
+                    generators: E::empty(),
+                    microchips: E::empty(),
+                },
+                Floor {
+                    generators: E::empty(),
+                    microchips: E::empty(),
+                },
             ],
-            vec![Microchip(Polonium), Microchip(Promethium)],
-            vec![],
-            vec![],
-        ]
+            elevator: 0,
+        }
     };
 
-    //let input = {
-    //use Element::*;
-    //use Item::*;
-    //vec![
-    //vec![Microchip(Hydrogen), Microchip(Lithium)],
-    //vec![Generator(Hydrogen)],
-    //vec![Generator(Lithium)],
-    //vec![],
-    //]
-    //};
+    assert_eq!(true, input.check_safety());
 
-    dbg!(part1_solution(input.clone()));
+    assert_eq!(47, part1_solution(input, Elements::MAIN_ALL));
 
     Ok(())
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-enum Element {
-    Polonium,
-    Thulium,
-    Promethium,
-    Ruthenium,
-    Cobalt,
-    // For the sample
-    Hydrogen,
-    Lithium,
+bitflags! {
+    struct Elements: u8 {
+        const Hydrogen   = 0b0000_0001;
+        const Lithium    = 0b0000_0010;
+        const Polonium   = 0b0000_0100;
+        const Thulium    = 0b0000_1000;
+        const Promethium = 0b0001_0000;
+        const Ruthenium  = 0b0010_0000;
+        const Cobalt     = 0b0100_0000;
+
+        const MAIN_ALL = Elements::Polonium.bits | Elements::Thulium.bits | Elements::Promethium.bits | Elements::Ruthenium.bits | Elements::Cobalt.bits;
+        const EXAMPLE_ALL = Elements::Hydrogen.bits | Elements::Lithium.bits;
+    }
 }
 
-impl fmt::Display for Element {
+impl fmt::Display for Elements {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-enum Item {
-    Generator(Element),
-    Microchip(Element),
-}
-
-type Map = Vec<Floor>;
-type Floor = Vec<Item>;
-
-fn display_map(map: &Map) {
-    for floor in map.iter().rev() {
-        for item in floor.iter() {
-            match item {
-                Item::Generator(elem) => print!("{}G", &elem.to_string()[0..2]),
-                Item::Microchip(elem) => print!("{}M", &elem.to_string()[0..2]),
-            }
-            print!(" ");
-        }
-        println!();
-    }
-    println!("--------------");
-}
-
-/// Checks if a certain arrangement of Generators and Microchips is safe.
-/// Returns empty `Ok` variant if safe, else, returns Err varriant containing
-/// the location of the first fried microchip.
-fn check_safety(map: &[Floor]) -> Result<(), (usize, usize)> {
-    for (floor, items) in map.iter().enumerate() {
-        // first, check if this floor is being irradiated by a generator
-        if items.iter().any(|i| matches!(i, Item::Generator(_))) {
-            // then make sure that each microchip has its corresponding generator
-            let failure = items.iter().enumerate().find_map(|(i, item)| {
-                // if this isn't a microchip, it can't be fried at all
-                if let Item::Microchip(elem) = item {
-                    if !items.contains(&Item::Generator(*elem)) {
-                        // this floor doesn't have the right generator
-                        return Some(i);
-                    }
-                }
+impl Elements {
+    fn split(self) -> impl Iterator<Item = Elements> + Clone {
+        (0..8u8).filter_map(move |i| {
+            if ((1 << i) & self.bits) != 0 {
+                Elements::from_bits(1 << i)
+            } else {
                 None
-            });
-
-            if let Some(idx) = failure {
-                return Err((floor, idx));
             }
-        }
+        })
     }
-
-    Ok(())
 }
 
-fn part1_solution(map: Map) -> usize {
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct Map {
+    floors: Vec<Floor>,
+    elevator: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct Floor {
+    generators: Elements,
+    microchips: Elements,
+}
+
+impl Map {
+    /// Checks if a certain arrangement of Generators and Microchips is safe.
+    fn check_safety(&self) -> bool {
+        self.floors
+            .iter()
+            .all(|floor| floor.generators.is_empty() || floor.generators.contains(floor.microchips))
+    }
+
+    fn all_possible_moves(&self) -> Vec<Move> {
+        let mut moves = vec![];
+        let items = &self.floors[self.elevator];
+
+        // there are three possibilities for moving a pair
+        // - 2 microchips
+        // - 2 generators
+        // - a pair -- it doesn't matter which pair, because the two pathways are
+        // equivalent and will take the same number of steps
+        //
+        // alternatively, move 1 microchip or 1 generator
+
+        // It doesn't matter which pair we choose, they are all equal
+        if let Some(elem) = (items.microchips & items.generators).split().next() {
+            moves.push(Move::Pair(elem))
+        }
+
+        for (m1, m2) in items.microchips.split().tuple_combinations() {
+            moves.push(Move::TwoMicrochips(m1, m2));
+        }
+
+        for (g1, g2) in items.generators.split().tuple_combinations() {
+            moves.push(Move::TwoGenerators(g1, g2));
+        }
+
+        moves.extend(items.microchips.split().map(Move::OneMicrochip));
+        moves.extend(items.generators.split().map(Move::OneGenerator));
+
+        moves
+    }
+
+    fn _display_map(&self) {
+        for (i, floor) in self.floors.iter().enumerate().rev() {
+            if i == self.elevator {
+                print!("E -- ");
+            }
+            for item in floor.microchips.split() {
+                print!("{}M ", &item.to_string()[0..2]);
+            }
+            for item in floor.generators.split() {
+                print!("{}G ", &item.to_string()[0..2]);
+            }
+            println!();
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum Move {
+    TwoMicrochips(Elements, Elements),
+    TwoGenerators(Elements, Elements),
+    Pair(Elements),
+    OneMicrochip(Elements),
+    OneGenerator(Elements),
+}
+
+fn part1_solution(map: Map, all: Elements) -> usize {
     let mut queue = VecDeque::new();
-    queue.push_back((0, 0, map.clone()));
+    queue.push_back((0, map.clone()));
 
     let mut visited = HashSet::new();
-    visited.insert((0, map.clone()));
+    visited.insert(map.clone());
 
-    while let Some((steps, elevator, map)) = queue.pop_front() {
+    while let Some((steps, map)) = queue.pop_front() {
         //println!("Elevator: {}, Steps: {}", elevator, steps);
         //display_map(&map);
         // check if all the floors except the last are empty
-        if map[..map.len() - 1].iter().all(|floor| floor.is_empty()) {
+        let last_floor = &map.floors[map.floors.len() - 1];
+        if last_floor.microchips == all && last_floor.generators == all {
             return steps;
         }
 
-        if elevator < map.len() - 1 {
-            // first try moving up
-            for (item1, item2) in map[elevator].iter().tuple_combinations() {
-                // prefer a pair
-                let mut next_map = map.clone();
-                next_map[elevator].retain(|x| x != item1 && x != item2);
+        let destinations = match map.elevator {
+            0 => vec![1],
+            x if x == map.floors.len() - 1 => vec![map.elevator - 1],
+            _ => vec![map.elevator + 1, map.elevator - 1],
+        };
 
-                next_map[elevator + 1].push(*item1);
-                next_map[elevator + 1].push(*item2);
+        //map.display_map();
+        //println!("{:?}", map.all_possible_moves());
 
-                let in_visited = visited.iter().any(|(e, m)| {
-                    *e == elevator + 1 && {
-                        m.iter().enumerate().all(|(floor, items)| {
-                            items.len() == next_map[floor].len()
-                                && items.iter().all(|i| next_map[floor].contains(i))
-                        })
-                    }
-                });
+        for (possibility, dest) in iproduct!(map.all_possible_moves(), destinations) {
+            let mut next_map = map.clone();
+            next_map.elevator = dest;
 
-                if !in_visited && matches!(check_safety(&next_map), Ok(())) {
-                    visited.insert((elevator + 1, next_map.clone()));
-                    queue.push_back((steps + 1, elevator + 1, next_map));
+            match possibility {
+                Move::TwoMicrochips(m1, m2) => {
+                    next_map.floors[map.elevator].microchips.remove(m1);
+                    next_map.floors[map.elevator].microchips.remove(m2);
+
+                    next_map.floors[dest].microchips.insert(m1);
+                    next_map.floors[dest].microchips.insert(m2);
+                }
+                Move::TwoGenerators(g1, g2) => {
+                    next_map.floors[map.elevator].generators.remove(g1);
+                    next_map.floors[map.elevator].generators.remove(g2);
+
+                    next_map.floors[dest].generators.insert(g1);
+                    next_map.floors[dest].generators.insert(g2);
+                }
+                Move::Pair(elem) => {
+                    next_map.floors[map.elevator].microchips.remove(elem);
+                    next_map.floors[map.elevator].generators.remove(elem);
+
+                    next_map.floors[dest].microchips.insert(elem);
+                    next_map.floors[dest].generators.insert(elem);
+                }
+                Move::OneMicrochip(elem) => {
+                    next_map.floors[map.elevator].microchips.remove(elem);
+
+                    next_map.floors[dest].microchips.insert(elem);
+                }
+                Move::OneGenerator(elem) => {
+                    next_map.floors[map.elevator].generators.remove(elem);
+
+                    next_map.floors[dest].generators.insert(elem);
                 }
             }
 
-            for (idx, item) in map[elevator].iter().enumerate() {
-                let mut next_map = map.clone();
-                next_map[elevator].remove(idx);
-                next_map[elevator + 1].push(*item);
-
-                let in_visited = visited.iter().any(|(e, m)| {
-                    *e == elevator + 1 && {
-                        m.iter().enumerate().all(|(floor, items)| {
-                            items.len() == next_map[floor].len()
-                                && items.iter().all(|i| next_map[floor].contains(i))
-                        })
-                    }
-                });
-
-                if !in_visited && matches!(check_safety(&next_map), Ok(())) {
-                    visited.insert((elevator + 1, next_map.clone()));
-                    queue.push_back((steps + 1, elevator + 1, next_map));
-                }
-            }
-        }
-
-        if elevator > 0 {
-            for (item1, item2) in map[elevator].iter().tuple_combinations() {
-                // prefer a pair
-                let mut next_map = map.clone();
-                next_map[elevator].retain(|x| x != item1 && x != item2);
-
-                next_map[elevator - 1].push(*item1);
-                next_map[elevator - 1].push(*item2);
-
-                let in_visited = visited.iter().any(|(e, m)| {
-                    *e == elevator + 1 && {
-                        m.iter().enumerate().all(|(floor, items)| {
-                            items.len() == next_map[floor].len()
-                                && items.iter().all(|i| next_map[floor].contains(i))
-                        })
-                    }
-                });
-
-                if !in_visited && matches!(check_safety(&next_map), Ok(())) {
-                    visited.insert((elevator - 1, next_map.clone()));
-                    queue.push_back((steps + 1, elevator - 1, next_map));
-                }
-            }
-
-            for (idx, item) in map[elevator].iter().enumerate() {
-                let mut next_map = map.clone();
-                next_map[elevator].remove(idx);
-                next_map[elevator - 1].push(*item);
-
-                let in_visited = visited.iter().any(|(e, m)| {
-                    *e == elevator + 1 && {
-                        m.iter().enumerate().all(|(floor, items)| {
-                            items.len() == next_map[floor].len()
-                                && items.iter().all(|i| next_map[floor].contains(i))
-                        })
-                    }
-                });
-
-                if !in_visited && matches!(check_safety(&next_map), Ok(())) {
-                    visited.insert((elevator - 1, next_map.clone()));
-                    queue.push_back((steps + 1, elevator - 1, next_map));
-                }
+            if !visited.contains(&next_map) && next_map.check_safety() {
+                //println!("Move: {:?}, Steps: {:?}", possibility, steps + 1);
+                //next_map.display_map();
+                queue.push_back((steps + 1, next_map.clone()));
+                visited.insert(next_map.clone());
             }
         }
+        //break;
     }
     0
+}
+
+#[test]
+fn day11_example() {
+    let input = {
+        use Elements as E;
+        Map {
+            floors: vec![
+                Floor {
+                    generators: E::empty(),
+                    microchips: E::Hydrogen | E::Lithium,
+                },
+                Floor {
+                    generators: E::Hydrogen,
+                    microchips: E::empty(),
+                },
+                Floor {
+                    generators: E::Lithium,
+                    microchips: E::empty(),
+                },
+                Floor {
+                    generators: E::empty(),
+                    microchips: E::empty(),
+                },
+            ],
+            elevator: 0,
+        }
+    };
+
+    assert_eq!(11, part1_solution(input, Elements::EXAMPLE_ALL));
 }
