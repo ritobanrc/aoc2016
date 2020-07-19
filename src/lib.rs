@@ -11,6 +11,7 @@ pub mod day10;
 #[allow(non_upper_case_globals)]
 pub mod day11;
 pub mod day12;
+pub mod day13;
 
 use std::io;
 
